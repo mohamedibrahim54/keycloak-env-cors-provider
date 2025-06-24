@@ -6,7 +6,7 @@
 
     <groupId>com.github.mohamedibrahim54</groupId>
     <artifactId>keycloak-env-cors-provider</artifactId>
-    <version>1.0-SNAPSHOT</version>
+    <version>1.0.0</version>
 
     <name>keycloak-env-cors-provider</name>
 
