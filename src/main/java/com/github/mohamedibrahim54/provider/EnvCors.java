@@ -17,7 +17,8 @@ import org.keycloak.services.cors.Cors;
 public class EnvCors implements Cors {
 
     private static final Logger logger = Logger.getLogger(EnvCors.class);
-    private static final String CORS_ALLOW_ORIGINS_ENV = "CORS_ALLOW_ORIGINS";
+    private static final String CORS_ALLOW_ORIGINS_ENV_VAR = "CORS_ALLOW_ORIGINS";
+    private static final Set<String> ENV_ALLOW_ORIGINS;
 
     private final HttpRequest request;
     private final HttpResponse response;
@@ -31,26 +32,29 @@ public class EnvCors implements Cors {
     private boolean preflight;
     private boolean auth;
 
+    static {
+        Set<String> allowedOriginsList = new HashSet<>();
+        String allowedOriginsEnv = System.getenv(CORS_ALLOW_ORIGINS_ENV_VAR);
+        if (allowedOriginsEnv != null && !allowedOriginsEnv.isBlank()) {
+            for (String origin : allowedOriginsEnv.split(",")) {
+                String trimmed = origin.trim();
+                if (!trimmed.isEmpty()) {
+                    allowedOriginsList.add(trimmed);
+                }
+            }
+            logger.debugv("Loaded {0} allowed origins from environment: {1}", allowedOriginsList.size(), allowedOriginsList);
+        } else {
+            logger.debugv("No CORS origins configured in environment variable {0}", CORS_ALLOW_ORIGINS_ENV_VAR);
+        }
+
+        ENV_ALLOW_ORIGINS = allowedOriginsList.isEmpty() ?
+                Collections.emptySet() :
+                Collections.unmodifiableSet(allowedOriginsList);
+    }
 
     EnvCors(KeycloakSession session) {
         this.request = session.getContext().getHttpRequest();
         this.response = session.getContext().getHttpResponse();
-    }
-
-    private List<String> getAllowedOrigins() {
-        String allowedOriginsEnv = System.getenv(CORS_ALLOW_ORIGINS_ENV);
-        if (allowedOriginsEnv == null || allowedOriginsEnv.trim().isEmpty()) {
-            return Collections.emptyList();
-        }
-
-        List<String> origins = new ArrayList<>();
-        for (String origin : allowedOriginsEnv.split(",")) {
-            String trimmed = origin.trim();
-            if (!trimmed.isEmpty()) {
-                origins.add(trimmed);
-            }
-        }
-        return origins;
     }
 
     @Override
@@ -136,13 +140,7 @@ public class EnvCors implements Cors {
 
         // Check if we have a wildcard and need to restrict to env origins
         if (allowedOrigins != null && allowedOrigins.contains(ACCESS_CONTROL_ALLOW_ORIGIN_WILDCARD)) {
-            List<String> envAllowedOrigins = getAllowedOrigins();
-            if (!envAllowedOrigins.isEmpty()) {
-                // Replace wildcard with specific origins from environment
-                allowedOrigins.remove(ACCESS_CONTROL_ALLOW_ORIGIN_WILDCARD);
-                allowedOrigins.addAll(envAllowedOrigins);
-                logger.debug("Replaced wildcard with origins from environment: " + allowedOrigins);
-            }
+            replaceWildcardWithEnvironmentOrigins(allowedOrigins);
         }
 
         // Skip origin check for preflight requests
@@ -193,5 +191,13 @@ public class EnvCors implements Cors {
     @Override
     public void close() {
         // No resources to clean up
+    }
+
+    private void replaceWildcardWithEnvironmentOrigins(Set<String> originsToUpdate) {
+        if (!ENV_ALLOW_ORIGINS.isEmpty()) {
+            originsToUpdate.remove(ACCESS_CONTROL_ALLOW_ORIGIN_WILDCARD);
+            originsToUpdate.addAll(EnvCors.ENV_ALLOW_ORIGINS);
+            logger.debugv("Replaced wildcard with origins from environment: {0}", originsToUpdate);
+        }
     }
 }
